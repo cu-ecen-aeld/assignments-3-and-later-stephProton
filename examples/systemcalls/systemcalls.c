@@ -1,4 +1,8 @@
 #include "systemcalls.h"
+#include "stdlib.h"
+#include "unistd.h"
+#include "sys/wait.h"
+#include <fcntl.h>
 
 /**
  * @param cmd the command to execute with system()
@@ -17,7 +21,11 @@ bool do_system(const char *cmd)
  *   or false() if it returned a failure
 */
 
-    return true;
+        int r = system(cmd);
+        if (r) 
+                return false;
+        else 
+                return true;
 }
 
 /**
@@ -59,6 +67,23 @@ bool do_exec(int count, ...)
  *
 */
 
+    int status;
+    int pid = fork();
+    if (pid < 0) {
+            exit(EXIT_FAILURE);
+    }
+
+    if (execv(command[0], command) < 0) {
+            exit(EXIT_FAILURE);
+    }
+
+    wait(&status);
+    if (WIFEXITED(status)) {
+            printf("Child exited with status %d\n", WEXITSTATUS(status));
+    } else {
+            printf("Child did not exit successfully\n");
+    }
+
     va_end(args);
 
     return true;
@@ -92,6 +117,39 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
  *   The rest of the behaviour is same as do_exec()
  *
 */
+
+
+    int kidpid;
+    int status;
+
+    int fd = open(outputfile, O_WRONLY|O_TRUNC|O_CREAT, 0644);
+    if (fd < 0) { 
+            perror("open"); 
+            abort(); 
+    }
+
+    switch (kidpid = fork()) {
+            case -1: 
+                    perror("fork"); 
+                    abort();
+            case 0:
+                     if (dup2(fd, 1) < 0) { 
+                             perror("dup2"); abort(); 
+                     }
+                     close(fd);
+                     execvp(command[0], command); 
+                     perror("execvp"); 
+                     abort();
+            default:
+                     close(fd);
+    }
+
+    wait(&status);
+    if (WIFEXITED(status)) {
+            printf("Child exited with status %d\n", WEXITSTATUS(status));
+    } else {
+            printf("Child did not exit successfully\n");
+    }
 
     va_end(args);
 

@@ -3,6 +3,8 @@
 #include "unistd.h"
 #include "sys/wait.h"
 #include <fcntl.h>
+#include "errno.h"
+#include "string.h"
 
 /**
  * @param cmd the command to execute with system()
@@ -50,38 +52,58 @@ bool do_exec(int count, ...)
     int i;
     for(i=0; i<count; i++)
     {
-        command[i] = va_arg(args, char *);
+            command[i] = va_arg(args, char *);
     }
     command[count] = NULL;
     // this line is to avoid a compile warning before your implementation is complete
     // and may be removed
     command[count] = command[count];
 
-/*
- * TODO:
- *   Execute a system command by calling fork, execv(),
- *   and wait instead of system (see LSP page 161).
- *   Use the command[0] as the full path to the command to execute
- *   (first argument to execv), and use the remaining arguments
- *   as second argument to the execv() command.
- *
-*/
+    /*
+     * TODO:
+     *   Execute a system command by calling fork, execv(),
+     *   and wait instead of system (see LSP page 161).
+     *   Use the command[0] as the full path to the command to execute
+     *   (first argument to execv), and use the remaining arguments
+     *   as second argument to the execv() command.
+     *
+     */
 
     int status;
+
     int pid = fork();
     if (pid < 0) {
             exit(EXIT_FAILURE);
-    }
 
-    if (execv(command[0], command) < 0) {
-            exit(EXIT_FAILURE);
-    }
+    } else if (pid == 0) {
+            printf("fork exited with pid %d. call execv\n", pid);
+            printf("do_exec fork done\n");
+            printf("calling execv with cmd %s. nargs:%d, args:%s %s\n", 
+                            command[0], count, command[1], command[2]);
 
-    wait(&status);
-    if (WIFEXITED(status)) {
-            printf("Child exited with status %d\n", WEXITSTATUS(status));
+            int ret = execv(command[0], command);
+            printf("execv exited with ret %d\n", ret);
+            if (ret < 0) {
+                    printf("ERROR: can't execv: %s\n", strerror(errno));
+                    printf("returning false on child\n");
+                    return false;
+            }
+
     } else {
-            printf("Child did not exit successfully\n");
+            int ret = wait(&status);
+            if (ret == -1) {
+                    printf("returning false on parent\n");
+                    return false;
+            }
+            printf("returning true on parent\n");
+            return true;
+            /* if (WIFEXITED(status)) { */
+                    /* printf("Child exited with status %d\n", WEXITSTATUS(status)); */
+                    /* return true; */
+            /* } else { */
+                    /* printf("Child did not exit successfully\n"); */
+                    /* return false; */
+            /* } */
     }
 
     va_end(args);
@@ -119,6 +141,7 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
 */
 
 
+    printf("\nFUNZIONE do_exec_redirect()\n");
     int kidpid;
     int status;
 
@@ -140,16 +163,19 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
                      execvp(command[0], command); 
                      perror("execvp"); 
                      abort();
+                     return false;
             default:
+                     wait(&status);
+                     if (WIFEXITED(status)) {
+                             printf("Child exited with status %d\n", WEXITSTATUS(status));
+                             return true;
+                     } else {
+                             printf("Child did not exit successfully\n");
+                             return true;
+                     }
                      close(fd);
     }
 
-    wait(&status);
-    if (WIFEXITED(status)) {
-            printf("Child exited with status %d\n", WEXITSTATUS(status));
-    } else {
-            printf("Child did not exit successfully\n");
-    }
 
     va_end(args);
 

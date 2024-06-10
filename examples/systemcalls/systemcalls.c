@@ -76,8 +76,6 @@ bool do_exec(int count, ...)
             exit(EXIT_FAILURE);
 
     } else if (pid == 0) {
-            printf("fork exited with pid %d. call execv\n", pid);
-            printf("do_exec fork done\n");
             printf("calling execv with cmd %s. nargs:%d, args:%s %s\n", 
                             command[0], count, command[1], command[2]);
 
@@ -90,20 +88,12 @@ bool do_exec(int count, ...)
             }
 
     } else {
-            int ret = wait(&status);
-            if (ret == -1) {
-                    printf("returning false on parent\n");
+            pid = wait (&status);
+            if (pid == -1)
+                    return false;
+            if (status != 0) {
                     return false;
             }
-            printf("returning true on parent\n");
-            return true;
-            /* if (WIFEXITED(status)) { */
-                    /* printf("Child exited with status %d\n", WEXITSTATUS(status)); */
-                    /* return true; */
-            /* } else { */
-                    /* printf("Child did not exit successfully\n"); */
-                    /* return false; */
-            /* } */
     }
 
     va_end(args);
@@ -144,6 +134,7 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     printf("\nFUNZIONE do_exec_redirect()\n");
     int kidpid;
     int status;
+    int pid;
 
     int fd = open(outputfile, O_WRONLY|O_TRUNC|O_CREAT, 0644);
     if (fd < 0) { 
@@ -160,18 +151,16 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
                              perror("dup2"); abort(); 
                      }
                      close(fd);
-                     execvp(command[0], command); 
-                     perror("execvp"); 
+                     execv(command[0], command); 
+                     perror("execv"); 
                      abort();
                      return false;
             default:
-                     wait(&status);
-                     if (WIFEXITED(status)) {
-                             printf("Child exited with status %d\n", WEXITSTATUS(status));
-                             return true;
-                     } else {
-                             printf("Child did not exit successfully\n");
-                             return true;
+                     pid = wait (&status);
+                     if (pid == -1)
+                             return false;
+                     if (status != 0) {
+                             return false;
                      }
                      close(fd);
     }

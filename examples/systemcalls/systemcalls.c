@@ -73,7 +73,7 @@ bool do_exec(int count, ...)
 
     int pid = fork();
     if (pid < 0) {
-            exit(EXIT_FAILURE);
+            return false;
 
     } else if (pid == 0) {
             printf("calling execv with cmd %s. nargs:%d, args:%s %s\n", 
@@ -84,13 +84,16 @@ bool do_exec(int count, ...)
             if (ret < 0) {
                     printf("ERROR: can't execv: %s\n", strerror(errno));
                     printf("returning false on child\n");
-                    return false;
             }
+            exit(1);
 
     } else {
-            pid = wait (&status);
-            if (pid == -1)
-                    return false;
+            if (waitpid(pid, &status, 0) == -1) {
+                return false;
+            }
+            /* pid = wait (&status); */
+            /* if (pid == -1) */
+                    /* return false; */
             if (status != 0) {
                     return false;
             }
@@ -131,7 +134,7 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
 */
 
 
-    printf("\nFUNZIONE do_exec_redirect()\n");
+    printf("\nFUNZIONE do_exec_redirect() to %s\n", outputfile);
     int kidpid;
     int status;
     int pid;

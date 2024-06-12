@@ -115,9 +115,7 @@ make writer
 # on the target rootfs
 cp -Lr conf/ "${OUTDIR}/rootfs/home/"
 cp -Lr conf/ "${OUTDIR}/rootfs/"
-cp ./finder-test.sh "${OUTDIR}/rootfs/home/"
-cp ./writer.sh "${OUTDIR}/rootfs/home/"
-cp ./finder.sh "${OUTDIR}/rootfs/home/"
+cp ./*.sh "${OUTDIR}/rootfs/home/"
 cp writer "${OUTDIR}/rootfs/home/"
 
 # TODO: Chown the root directory

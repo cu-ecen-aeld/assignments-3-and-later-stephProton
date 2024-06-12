@@ -41,11 +41,11 @@ if [ ! -e ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ]; then
     # TODO: Add your kernel build steps here
     echo ""
     echo "building kernel..${CROSS_COMPILE}"
-    # make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- mrproper
-    # make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- defconfig
-    # make -j4 ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- all
-    ## make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- modules
-    # make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- dtbs
+    make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- mrproper
+    make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- defconfig
+    make -j4 ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- all
+    # make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- modules
+    make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- dtbs
 
 
     echo "end of kernel building process"
@@ -82,9 +82,9 @@ else
 fi
 
 # TODO: Make and install busybox
-# make distclean
-# make defconfig
-# make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE}
+make distclean
+make defconfig
+make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE}
 make CONFIG_PREFIX=${OUTDIR}/rootfs ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} install
 
 cd "${OUTDIR}/rootfs"

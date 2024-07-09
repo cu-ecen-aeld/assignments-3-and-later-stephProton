@@ -2,16 +2,13 @@ CC=$(CROSS_COMPILE)gcc
 
 .PHONY: clean
 
-all: aesdsocket client
+all: aesdsocket
 
 default: aesdsocket
 
 aesdsocket: aesdsocket.c
 	$(CC) -g -o '$@' '$<'
 
-client: client.c
-	$(CC) -g -o '$@' '$<'
-
 clean:
-	rm -rf aesdsocket client 
+	rm -rf aesdsocket
 

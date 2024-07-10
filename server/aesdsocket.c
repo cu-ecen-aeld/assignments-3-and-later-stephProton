@@ -5,11 +5,55 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <signal.h>
 
-#define PORT 9000 
+#define PORT 9000
 #define BUFFER_SIZE 2048
 #define STR_SIZE 3*1024
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
+
+
+static int server_fd, new_socket;
+static FILE* fd;
+
+void handle_signal(int signal) {
+    printf("Received signal %d, closing sockets...\n", signal);
+
+    // Close client socket if open
+    if (new_socket >= 0) {
+        close(new_socket);
+    }
+
+    // Close server socket if open
+    if (server_fd >= 0) {
+        close(server_fd);
+    }
+
+    fclose(fd);
+
+    exit(0);
+}
+
+int setup_signal_handlers()
+{
+        struct sigaction sa;
+
+        sa.sa_handler = handle_signal;
+        sa.sa_flags = 0;
+        sigemptyset(&sa.sa_mask);
+
+        if (sigaction(SIGTERM, &sa, NULL) != 0) {
+                perror("Error setting up SIGINT handler");
+                return -1;
+        }
+
+        if (sigaction(SIGINT, &sa, NULL) != 0) {
+                perror("Error setting up SIGINT handler");
+                return -1;
+        }
+
+        return 0;
+}
 
 
 int setBlockingMode(int sockfd) {
@@ -28,9 +72,9 @@ int setBlockingMode(int sockfd) {
     return 0;
 }
 
-int main() {
+int main(int argc, char *argv[]) 
+{
         int count = 1;
-        int server_fd, new_socket;
         struct sockaddr_in address;
         int opt = 1;
         int addrlen = sizeof(address);
@@ -42,11 +86,30 @@ int main() {
         int new_size = 0;
         int start = 1;
         int found = 0;
+        int run_as_daemon = 0;
+        pid_t pid;
+
+
+        // Set up signal handlers
+        if (setup_signal_handlers()) {
+                exit(EXIT_FAILURE);
+        }
+
+
+        while ((opt = getopt(argc, argv, "d")) != -1) {
+                switch (opt) {
+                        case 'd':
+                                run_as_daemon = 1;
+                                break;
+                        default:
+                                printf("no option passed. continue with default mode\n");
+                }
+        }
 
         //open file to save data
         const char* filenameToWrite = "/var/tmp/aesdsocketdata";
         printf("try to open file %s..\n", filenameToWrite);
-        FILE* fd = fopen(filenameToWrite, "w+");
+        fd = fopen(filenameToWrite, "w+");
         if (!fd) {
                 printf("Failed to open the file: %s", strerror(errno));
                 exit(EXIT_FAILURE);
@@ -77,6 +140,23 @@ int main() {
                 perror("bind failed");
                 close(server_fd);
                 exit(EXIT_FAILURE);
+        }
+
+        if (run_as_daemon) {
+                printf("forking process..\n");
+                pid = fork();
+                if (pid < 0) {
+                        perror("fork failed");
+                        exit(EXIT_FAILURE);
+                }
+
+                if (pid > 0) {
+                        printf("child created with pid %d. fork succed. parent exiting..\n", pid);
+                        exit(EXIT_SUCCESS);
+                }
+                
+                if (pid == 0)
+                        printf("child continue execution..\n");
         }
 
         while (1) {
@@ -114,7 +194,6 @@ int main() {
                 printf("start read loop..\n");
 
                 for (;;) {
-
                         found = 0;
                         // Read data from the client
                         int nread = read(new_socket, buffer, BUFFER_SIZE);
@@ -216,8 +295,8 @@ int main() {
                                 }
                                 printf("read filesize: %ld\n", filesize);
 
-                                char* out_buf = malloc(filesize+1);
-                                memset(out_buf, 0, filesize+1);
+                                char* out_buf = malloc(filesize + sizeof(char));
+                                memset(out_buf, 0, filesize + sizeof(char));
                                 size_t elems = fread(out_buf, sizeof(char), filesize, fd);
                                 printf("read back the file.. elems: %zu\n", elems);
                                 if (elems != filesize) {
@@ -227,12 +306,12 @@ int main() {
                                         return EXIT_FAILURE;
                                 }
 
-                                out_buf[filesize+1] = '\0';
+                                out_buf[filesize -1 + sizeof(char)] = '\0';
 
                                 printf("send message back.. [%s]\n", out_buf);
                                 ssize_t r = send(new_socket, out_buf, strlen(out_buf), 0);
                                 printf("send ret: %zu, freeing out_buf..\n", r);
-                                /* free(out_buf); */
+                                free(out_buf);
 
                         }
 

@@ -225,7 +225,7 @@ int main(int argc, char *argv[])
                                         memcpy(out_buf, dbuf, curr_dbuf_size);
                                         memcpy(out_buf + curr_dbuf_size*sizeof(char), str_to_write, curr_written_bytes);
 
-                                        printf("writing buf [%s] to file..\n", out_buf);
+                                        printf("writing out_buf to file..\n");
                                         size_t elems = fwrite(out_buf, sizeof(char), tot_size, fd);
                                         if (elems != tot_size) {
                                                 printf("Failed to write data to file. writed:%zu, expected:%zu",
@@ -234,7 +234,7 @@ int main(int argc, char *argv[])
                                                 return EXIT_FAILURE;
                                         }
 
-                                        printf("writed %s\n", out_buf);
+                                        printf("writed out_buf\n");
                                         free(out_buf);
 
 
@@ -318,7 +318,10 @@ int main(int argc, char *argv[])
                         memset(buffer, 0, BUFFER_SIZE);
 
                 }
+
+                free(dbuf);
         }
+
         // Close the socket
         close(new_socket);
         close(server_fd);

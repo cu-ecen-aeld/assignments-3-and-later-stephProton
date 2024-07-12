@@ -1,2 +1,1 @@
-#
-start-stop-daemon aesdsocket -d
+start-stop-daemon --start --background --make-pidfile --pidfile /var/run/aesdsocket.pid  --exec /usr/bin/aesdsocket -- -d

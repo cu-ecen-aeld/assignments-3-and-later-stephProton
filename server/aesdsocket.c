@@ -161,35 +161,35 @@ int main(int argc, char *argv[])
                         printf("child continue execution..\n");
 
                 // Create a new session and become the session leader
-                if (setsid() == -1) {
-                        exit(EXIT_FAILURE);
-                }
+                /* if (setsid() == -1) { */
+                        /* exit(EXIT_FAILURE); */
+                /* } */
 
-                switch (fork()) {
-                        case -1: 
-                                perror("fork failed");
-                                exit(EXIT_FAILURE);
-                        case 0: 
-                                printf("child continue execution..\n");
-                                break; // Grandchild process continues
-                        default: 
-                                printf("child created. fork succed. parent exiting..\n");
-                                _exit(EXIT_SUCCESS); // Child process exits
-                }
+                /* switch (fork()) { */
+                        /* case -1:  */
+                                /* perror("fork failed"); */
+                                /* exit(EXIT_FAILURE); */
+                        /* case 0:  */
+                                /* printf("child continue execution..\n"); */
+                                /* break; // Grandchild process continues */
+                        /* default:  */
+                                /* printf("child created. fork succed. parent exiting..\n"); */
+                                /* _exit(EXIT_SUCCESS); // Child process exits */
+                /* } */
 
                 // Optionally, change the working directory to root and set file permissions
-                chdir("/");
-                umask(1);
+                /* chdir("/"); */
+                /* umask(1); */
 
                 // Close all open file descriptors
-                for (int fd = sysconf(_SC_OPEN_MAX); fd >= 0; fd--) {
-                        close(fd);
-                }
+                /* for (int fd = sysconf(_SC_OPEN_MAX); fd >= 0; fd--) { */
+                        /* close(fd); */
+                /* } */
 
                 // Redirect standard input, output, and error to /dev/null
-                open("/dev/null", O_RDWR); // stdin
-                dup(0); // stdout
-                dup(0); // stderr
+                /* open("/dev/null", O_RDWR); // stdin */
+                /* dup(0); // stdout */
+                /* dup(0); // stderr */
         }
 
         while (1) {

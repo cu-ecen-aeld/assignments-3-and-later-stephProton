@@ -8,6 +8,8 @@
 #include <signal.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <pthread.h>
+#include <syslog.h>
 
 #define PORT 9000
 #define BUFFER_SIZE 2048
@@ -17,6 +19,17 @@
 
 static int server_fd, new_socket;
 static FILE* fd;
+static int th_count = 0;
+
+pthread_mutex_t fmux;
+
+//linked list
+typedef struct node {
+    pthread_t th;
+    struct node *next;
+} Node;
+
+void* handle_client();
 
 void handle_signal(int signal) {
     printf("Received signal %d, closing sockets...\n", signal);
@@ -76,26 +89,21 @@ int setBlockingMode(int sockfd) {
 
 int main(int argc, char *argv[]) 
 {
-        int count = 1;
         struct sockaddr_in address;
         int opt = 1;
         int addrlen = sizeof(address);
-        char buffer[BUFFER_SIZE] = {0};
-
-        char str_to_write[STR_SIZE];
-        int curr_written_bytes = 0;
-        int curr_dbuf_size = 0;
-        int new_size = 0;
-        int start = 1;
-        int found = 0;
         int run_as_daemon = 0;
         pid_t pid;
+        Node *head = NULL;
 
 
         // Set up signal handlers
         if (setup_signal_handlers()) {
                 exit(EXIT_FAILURE);
         }
+
+        openlog("aesdsocket", LOG_CONS | LOG_PID, LOG_USER);
+        syslog(LOG_INFO, "aesdsocket start..");
 
 
         while ((opt = getopt(argc, argv, "d")) != -1) {
@@ -196,7 +204,7 @@ int main(int argc, char *argv[])
 
                 // Start listening for incoming connections
                 if (listen(server_fd, 3) < 0) {
-                        perror("listen");
+                        syslog(LOG_ERR, "listen fail");
                         close(server_fd);
                         exit(EXIT_FAILURE);
                 }
@@ -206,7 +214,7 @@ int main(int argc, char *argv[])
                 // Accept an incoming connection
                 if ((new_socket = accept(server_fd, (struct sockaddr *)&address, 
                                                 (socklen_t *)&addrlen)) < 0) {
-                        perror("accept");
+                        syslog(LOG_ERR, "accept fail");
                         close(server_fd);
                         exit(EXIT_FAILURE);
                 }
@@ -217,146 +225,196 @@ int main(int argc, char *argv[])
                         exit(EXIT_FAILURE);
                 }
 
-
-                char *dbuf = calloc(1, sizeof(char));
-                if (dbuf == NULL) {
-                        perror("Failed to allocate memory for segment");
-                        return EXIT_FAILURE;
+                syslog(LOG_INFO, "launching client hanler thread...");
+                Node* n = malloc(sizeof(Node));
+                pthread_t th;
+                if (pthread_create(&(n->th), NULL, handle_client, NULL) != 0) {
+                        syslog(LOG_ERR, "Unable to create thread");
+                        close(new_socket);
+                        continue;
                 }
-
-                printf("start read loop..\n");
-
-                for (;;) {
-                        found = 0;
-                        // Read data from the client
-                        int nread = read(new_socket, buffer, BUFFER_SIZE);
-                        if (nread == 0) {
-                                printf("client has disconnected..\n");
-                                break;
-                        }
-
-                        printf("Received: bytes read:%d\n", nread);
-                        /* printf("Received: [%s] bytes read:%d\n", buffer, nread); */
-
-                        printf("processing..\n");
-
-                        // search for \n in received buffer
-                        count++;
-                        printf("search for \\n in received buffer. count:%d\n", count);
-                        for (size_t i = 0; i < nread; i++) {
-                                /* printf("analizing %c\n", buffer[i]); */
-                                str_to_write[curr_written_bytes] = buffer[i];
-                                curr_written_bytes++;
-
-                                if (buffer[i] == '\n') {
-                                        found = 1;
-                                        printf("Newline character found at position: %zu. writing to file\n", i);
-
-                                        size_t tot_size = curr_dbuf_size + curr_written_bytes;
-
-                                        char* out_buf = calloc(tot_size, sizeof(char));
-                                        memcpy(out_buf, dbuf, curr_dbuf_size);
-                                        memcpy(out_buf + curr_dbuf_size*sizeof(char), str_to_write, curr_written_bytes);
-
-                                        printf("writing out_buf to file..\n");
-                                        size_t elems = fwrite(out_buf, sizeof(char), tot_size, fd);
-                                        if (elems != tot_size) {
-                                                printf("Failed to write data to file. writed:%zu, expected:%zu",
-                                                                elems, tot_size);
-                                                fclose(fd);
-                                                return EXIT_FAILURE;
-                                        }
-
-                                        printf("writed out_buf\n");
-                                        free(out_buf);
-
-
-
-                                        // clear static temp buf
-                                        memset(str_to_write, '0', STR_SIZE);
-                                        curr_written_bytes = 0;
-
-                                        // reset dbuf storage
-                                        curr_dbuf_size = 0;
-                                        dbuf = realloc(dbuf, 1);
-                                        if (dbuf == NULL) {
-                                                perror("Failed to realloc when reset dbuf storage");
-                                                free(dbuf);
-                                                return EXIT_FAILURE;
-                                        }
-
-                                }
-                        }
-
-
-                        // add to dbuf the new packet if there is no \n found
-                        if (curr_written_bytes != 0) {
-                                printf("data arrived has no EOL. reallocating %d\n", new_size);
-                                new_size = curr_dbuf_size + curr_written_bytes;
-
-                                printf("reallocating [%d] bytes = curr_written_bytes [%d] + curr_dbuf_size [%d]\n", 
-                                                new_size, curr_written_bytes, curr_dbuf_size);
-
-                                dbuf = realloc(dbuf, new_size * sizeof(char));
-                                if (dbuf == NULL) {
-                                        perror("Failed to reallocate memory for store_buffer");
-                                        free(dbuf);
-                                        return EXIT_FAILURE;
-                                }
-
-                                printf("memcpy on new realloc dbuf content of str_to_write\n");
-                                memcpy(dbuf + curr_dbuf_size * sizeof(char), str_to_write, curr_written_bytes);
-
-                                curr_dbuf_size = new_size;
-                        }
-
-                        memset(str_to_write, '0', STR_SIZE);
-                        curr_written_bytes = 0;
-
-
-                        // Send a response back to the client
-
-                        if (found) {
-                                // Determine the file size
-                                fseek(fd, 0, SEEK_END);   // Move to the end of the file
-                                long filesize = ftell(fd); // Get the current position in the file
-                                fseek(fd, 0, SEEK_SET);   // Move back to the start of the file
-                                if (filesize == -1) {
-                                        perror("Failed to determine file size");
-                                        fclose(fd);
-                                        return EXIT_FAILURE;
-                                }
-                                printf("read filesize: %ld\n", filesize);
-
-                                char* out_buf = malloc(filesize + sizeof(char));
-                                memset(out_buf, 0, filesize + sizeof(char));
-                                size_t elems = fread(out_buf, sizeof(char), filesize, fd);
-                                printf("read back the file.. elems: %zu\n", elems);
-                                if (elems != filesize) {
-                                        printf("Failed to read data from file. read:%zu, expected:%zu",
-                                                        elems, filesize);
-                                        fclose(fd);
-                                        return EXIT_FAILURE;
-                                }
-
-                                out_buf[filesize -1 + sizeof(char)] = '\0';
-
-                                printf("send message back.. [%s]\n", out_buf);
-                                ssize_t r = send(new_socket, out_buf, strlen(out_buf), 0);
-                                printf("send ret: %zu, freeing out_buf..\n", r);
-                                free(out_buf);
-
-                        }
-
-                        memset(buffer, 0, BUFFER_SIZE);
-
-                }
-
-                free(dbuf);
+                
+                n->next = head;
+                head = n;
+                th_count++;
         }
+
+        // join threads
+        Node *curr_th = head;
+        while (curr_th != NULL) {
+                if (pthread_join(curr_th->th, NULL) != 0) {
+                        syslog(LOG_ERR, "Unable to join thread");
+                }
+                curr_th = curr_th->next;
+        }
+
+        // free all threads
+        Node *next;
+        curr_th = head;
+        while (curr_th != NULL) {
+                next = curr_th->next;
+                free(curr_th);
+                curr_th = next;
+        }
+
 
         // Close the socket
         close(new_socket);
         close(server_fd);
         fclose(fd);
+}
+
+void* handle_client(void *p)
+{
+        char buffer[BUFFER_SIZE] = {0};
+        int found = 0;
+        int count = 1;
+        char str_to_write[STR_SIZE];
+        int curr_written_bytes = 0;
+        int curr_dbuf_size = 0;
+        int new_size = 0;
+
+        syslog(LOG_INFO, "[CH%d]: start...", th_count);
+
+        char *dbuf = calloc(1, sizeof(char));
+        if (dbuf == NULL) {
+                syslog(LOG_ERR, "[CH%d]: Failed to allocate memory for segment", th_count);
+                return NULL;
+        }
+
+
+        for (;;) {
+                found = 0;
+                // Read data from the client
+                int nread = read(new_socket, buffer, BUFFER_SIZE);
+                if (nread == 0) {
+                        syslog(LOG_ERR, "[CH%d]: client has disconnected..", th_count);
+                        break;
+                }
+
+                syslog(LOG_INFO, "[CH%d]: Received: bytes read:%d", th_count, nread);
+                /* printf("Received: [%s] bytes read:%d\n", buffer, nread); */
+
+                pthread_mutex_lock(&fmux);
+
+
+                // search for \n in received buffer
+                count++;
+                syslog(LOG_INFO, "[CH%d]: search for \\n in received buffer. count:%d", th_count, count);
+                for (size_t i = 0; i < nread; i++) {
+                        /* printf("analizing %c\n", buffer[i]); */
+                        str_to_write[curr_written_bytes] = buffer[i];
+                        curr_written_bytes++;
+
+                        if (buffer[i] == '\n') {
+                                found = 1;
+                                syslog(LOG_INFO, "[CH%d]: Newline character found at position: %zu. writing to file", th_count, i);
+
+                                size_t tot_size = curr_dbuf_size + curr_written_bytes;
+
+                                char* out_buf = calloc(tot_size, sizeof(char));
+                                memcpy(out_buf, dbuf, curr_dbuf_size);
+                                memcpy(out_buf + curr_dbuf_size*sizeof(char), str_to_write, curr_written_bytes);
+
+                                syslog(LOG_INFO, "[CH%d]: writing out_buf to file: %s", th_count, out_buf);
+                                size_t elems = fwrite(out_buf, sizeof(char), tot_size, fd);
+                                if (elems != tot_size) {
+                                        syslog(LOG_ERR, "[CH%d]: Failed to write data to file. writed:%zu, expected:%zu", th_count,
+                                                        elems, tot_size);
+                                        fclose(fd);
+                                        return NULL;
+                                }
+
+                                syslog(LOG_INFO, "[CH%d]: writed out_buf", th_count);
+                                free(out_buf);
+
+
+
+                                // clear static temp buf
+                                memset(str_to_write, '0', STR_SIZE);
+                                curr_written_bytes = 0;
+
+                                // reset dbuf storage
+                                curr_dbuf_size = 0;
+                                dbuf = realloc(dbuf, 1);
+                                if (dbuf == NULL) {
+                                        syslog(LOG_ERR, "[CH%d]: Failed to realloc when reset dbuf storage", th_count);
+                                        free(dbuf);
+                                        return NULL;
+                                }
+
+                        }
+                }
+
+
+
+                // add to dbuf the new packet if there is no \n found
+                if (curr_written_bytes != 0) {
+                        syslog(LOG_INFO, "[CH%d]: data arrived has no EOL. reallocating %d", th_count, new_size);
+                        new_size = curr_dbuf_size + curr_written_bytes;
+
+                        syslog(LOG_INFO, "[CH%d]: reallocating [%d] bytes = curr_written_bytes [%d] + curr_dbuf_size [%d]", th_count, 
+                                        new_size, curr_written_bytes, curr_dbuf_size);
+
+                        dbuf = realloc(dbuf, new_size * sizeof(char));
+                        if (dbuf == NULL) {
+                                syslog(LOG_ERR, "[CH%d]: Failed to reallocate memory for store_buffer", th_count);
+                                free(dbuf);
+                                return NULL;
+                        }
+
+                        syslog(LOG_INFO, "[CH%d]: memcpy on new realloc dbuf content of str_to_write", th_count);
+                        memcpy(dbuf + curr_dbuf_size * sizeof(char), str_to_write, curr_written_bytes);
+
+                        curr_dbuf_size = new_size;
+                }
+
+                memset(str_to_write, '0', STR_SIZE);
+                curr_written_bytes = 0;
+
+
+                // Send a response back to the client
+
+                if (found) {
+                        // Determine the file size
+                        fseek(fd, 0, SEEK_END);   // Move to the end of the file
+                        long filesize = ftell(fd); // Get the current position in the file
+                        fseek(fd, 0, SEEK_SET);   // Move back to the start of the file
+                        if (filesize == -1) {
+                                syslog(LOG_ERR, "[CH%d]: Failed to determine file size", th_count);
+                                fclose(fd);
+                                return NULL;
+                        }
+                        syslog(LOG_INFO, "[CH%d]: read filesize: %ld", th_count, filesize);
+
+                        char* out_buf = malloc(filesize + sizeof(char));
+                        memset(out_buf, 0, filesize + sizeof(char));
+                        size_t elems = fread(out_buf, sizeof(char), filesize, fd);
+                        syslog(LOG_INFO, "[CH%d]: read back the file.. elems: %zu", th_count, elems);
+                        if (elems != filesize) {
+                                syslog(LOG_ERR, "[CH%d]: Failed to read data from file. read:%zu, expected:%zu", th_count,
+                                                elems, filesize);
+                                fclose(fd);
+                                return NULL;
+                        }
+
+                        out_buf[filesize -1 + sizeof(char)] = '\0';
+
+                        syslog(LOG_INFO, "[CH%d]: send message back.. [%s]. size:%zu", 
+                                        th_count, out_buf, strlen(out_buf));
+                        ssize_t r = send(new_socket, out_buf, strlen(out_buf), 0);
+                        syslog(LOG_INFO, "[CH%d]: send ret: %zu, freeing out_buf..", th_count, r);
+                        free(out_buf);
+
+                }
+
+                memset(buffer, 0, BUFFER_SIZE);
+
+                pthread_mutex_unlock(&fmux);
+
+        }
+
+        free(dbuf);
+
+        /* return NULL; */
 }

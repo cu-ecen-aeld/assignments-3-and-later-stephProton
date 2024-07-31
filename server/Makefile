@@ -1,4 +1,4 @@
-CC=$(CROSS_COMPILE)gcc
+CC ?= $(CROSS_COMPILE)gcc
 LDFLAGS ?= -lpthread -lrt
 
 .PHONY: clean
